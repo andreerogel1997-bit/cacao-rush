@@ -1,4 +1,4 @@
-import type { CharacterDef, CharacterId } from "./types";
+import type { CharacterDef, CharacterId } from "./types.ts";
 
 export const CHARACTERS: CharacterDef[] = [
   {

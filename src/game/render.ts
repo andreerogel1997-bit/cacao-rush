@@ -1,7 +1,7 @@
-import type { ArtPack } from "./assets";
-import { flyingPos, laserOn } from "./sim";
-import type { Game } from "./types";
-import { VIEW_H, VIEW_W } from "./types";
+import type { ArtPack } from "./assets.ts";
+import { flyingPos, laserOn } from "./sim.ts";
+import type { Game } from "./types.ts";
+import { VIEW_H, VIEW_W } from "./types.ts";
 
 export type Cam = { x: number; y: number };
 

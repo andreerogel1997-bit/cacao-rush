@@ -1,4 +1,4 @@
-import type { Actions } from "./types";
+import type { Actions } from "./types.ts";
 
 const GAME_CODES = new Set([
   "ArrowLeft",

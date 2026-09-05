@@ -1,5 +1,5 @@
-import type { CharacterId, WorldId } from "./types";
-import { CAMPAIGN_COUNT, WORLD_COUNT, WORLD_TOTAL } from "./types";
+import type { CharacterId, WorldId } from "./types.ts";
+import { CAMPAIGN_COUNT, WORLD_COUNT, WORLD_TOTAL } from "./types.ts";
 
 const KEY = "cacao-rush-save-v1";
 const VERSION = 5;

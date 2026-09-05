@@ -1,6 +1,6 @@
-import { sfxCheck, sfxCoin, sfxDash, sfxDouble, sfxGoal, sfxHurt, sfxJump, sfxLand, sfxPound, sfxSave, sfxWin } from "./audio";
-import type { Actions, CharacterDef, Game, Hazard, Level, Particle, Platform, Player } from "./types";
-import { MAX_LIVES } from "./types";
+import { sfxCheck, sfxCoin, sfxDash, sfxDouble, sfxGoal, sfxHurt, sfxJump, sfxLand, sfxPound, sfxSave, sfxWin } from "./audio.ts";
+import type { Actions, CharacterDef, Game, Hazard, Level, Particle, Platform, Player } from "./types.ts";
+import { MAX_LIVES } from "./types.ts";
 
 const PW = 26;
 const PH = 42;

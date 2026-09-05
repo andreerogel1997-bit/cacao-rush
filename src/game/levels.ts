@@ -1,4 +1,4 @@
-import type { Hazard, Level, Pickup, Platform, WorldId } from "./types";
+import type { Hazard, Level, Pickup, Platform, WorldId } from "./types.ts";
 
 const T = 32;
 
@@ -263,7 +263,7 @@ export function createLevels(): Level[] {
         saw(T * 104, T * 10, 16, T * 5, 0, 2.6),
       ],
       coins([
-        ...arc(T * 8, T * 19, 4, T * 2, 18),
+        ...arc(T * 4, T * 19, 4, T * 2, 18),
         [T * 12, T * 10],
         ...arc(T * 22, T * 19, 3, T * 2, 24),
         ...arc(T * 34, T * 15, 4, T * 2.2, 40),
@@ -754,12 +754,12 @@ export function createLevels(): Level[] {
         ...coins(
           [
             [T * 44, T * 22],
-            [T * 52, T * 23],
+            [T * 52, T * 19],
             [T * 58, T * 21],
             [T * 80, T * 19],
             [T * 88, T * 18],
             [T * 116, T * 21],
-            [T * 124, T * 22],
+            [T * 124, T * 18],
             [T * 128, T * 20],
             [T * 132, T * 20],
             [T * 140, T * 26],

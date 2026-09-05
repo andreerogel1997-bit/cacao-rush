@@ -1,4 +1,4 @@
-import type { CharacterDef, CharacterId, WorldId } from "./types";
+import type { CharacterDef, CharacterId, WorldId } from "./types.ts";
 
 export type StoryCard = {
   narrator: string;
