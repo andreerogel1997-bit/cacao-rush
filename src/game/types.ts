@@ -45,6 +45,11 @@ export type Hazard = {
   phase?: number;
   vx?: number;
   range?: number;
+  /**
+   * Cuánto ha reparado en el jugador, de 0 a 1. Solo lo usan los peligros que
+   * dejan de ser un patrón ciego cuando alguien se les acerca.
+   */
+  alert?: number;
 };
 
 export type PickupKind = "bean" | "fish" | "chocolate";

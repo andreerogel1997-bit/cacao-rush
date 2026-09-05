@@ -284,6 +284,48 @@ function respawn(game: Game) {
   game.bagY = p.y;
 }
 
+/**
+ * Serpientes y tiburones dejan de ser un patrón ciego.
+ *
+ * Mientras nadie se acerca siguen su vaivén de siempre. Cuando el héroe entra
+ * en su campo —y solo si está más o menos a su altura— reparan en él y avanzan
+ * a su encuentro, sin salir nunca del tramo que el nivel les dio: no persiguen
+ * por el mapa, defienden su trecho. Al alejarse, vuelven a su ronda.
+ */
+function updateCazador(game: Game, h: Hazard, dt: number) {
+  const ox = h.ox ?? h.x;
+  const oy = h.oy ?? h.y;
+  const rango = h.ax ?? 0;
+  const p = game.player;
+
+  const dx = p.x + p.w / 2 - (h.x + h.w / 2);
+  const dy = p.y + p.h / 2 - (h.y + h.h / 2);
+  const alcanceX = h.kind === "shark" ? 340 : 240;
+  const alcanceY = h.kind === "shark" ? 150 : 96;
+  const aLaVista = Math.abs(dx) < alcanceX && Math.abs(dy) < alcanceY && game.status === "playing";
+
+  const previa = h.alert ?? 0;
+  h.alert = aLaVista ? Math.min(1, previa + dt * 2.2) : Math.max(0, previa - dt * 1.1);
+
+  if (h.alert > 0.55 && rango > 0) {
+    // Va hacia el héroe, pero atado a su tramo.
+    const velocidad = (h.kind === "shark" ? 190 : 130) * h.alert;
+    const paso = Math.sign(dx) * velocidad * dt;
+    h.x = Math.max(ox - rango, Math.min(ox + rango, h.x + paso));
+    const ondeo = h.kind === "shark" ? Math.sin(game.time * 5) * 10 : Math.sin(game.time * 9) * 4;
+    h.y = oy + (h.ay ? Math.sin(game.time * 1.6) * h.ay : 0) + ondeo;
+    return;
+  }
+
+  if (!h.period) return;
+  const t = game.time * ((Math.PI * 2) / h.period) + (h.phase ?? 0);
+  const patrullaX = ox + Math.sin(t) * rango;
+  // Al perder el rastro no salta de vuelta a su sitio: regresa andando.
+  const vuelta = h.alert > 0 ? Math.min(1, 2.4 * dt) : 1;
+  h.x += (patrullaX - h.x) * vuelta;
+  h.y = oy + Math.sin(t * (h.kind === "snake" ? 2 : 1.4)) * (h.kind === "snake" ? 5 : 18);
+}
+
 function updateMovers(game: Game, dt: number) {
   for (const plat of game.level.platforms) {
     plat.dx = 0;
@@ -300,12 +342,14 @@ function updateMovers(game: Game, dt: number) {
   }
   ridePoles(game);
   for (const h of game.level.hazards) {
-    if ((h.kind === "saw" || h.kind === "snake" || h.kind === "crab" || h.kind === "shark") && h.period) {
+    if (h.kind === "snake" || h.kind === "shark") {
+      updateCazador(game, h, dt);
+      continue;
+    }
+    if ((h.kind === "saw" || h.kind === "crab") && h.period) {
       const t = game.time * ((Math.PI * 2) / h.period) + (h.phase ?? 0);
       h.x = (h.ox ?? h.x) + Math.sin(t) * (h.ax ?? 0);
       h.y = (h.oy ?? h.y) + Math.sin(t) * (h.ay ?? 0);
-      if (h.kind === "snake") h.y = (h.oy ?? h.y) + Math.sin(t * 2) * 5;
-      if (h.kind === "shark") h.y = (h.oy ?? h.y) + Math.sin(t * 1.4) * 18;
     }
     if (h.kind === "fireball") {
       h.x += (h.vx ?? 0) * dt;
@@ -329,8 +373,36 @@ function updateMovers(game: Game, dt: number) {
   }
 }
 
+/**
+ * Las listas de plataformas que la física consulta una y otra vez.
+ *
+ * `solids` se llamaba en cada sondeo —y hay ocho por subpaso, con varios
+ * subpasos por fotograma—, y cada llamada construía un array nuevo. Ningún
+ * nivel pasa de veinticuatro plataformas, así que el coste no estaba en
+ * recorrerlas sino en la basura que dejaba: ahora la lista se calcula una vez y
+ * solo se rehace cuando una caja se rompe.
+ */
+const listasCache = new WeakMap<Game, { solidas: Platform[]; unaVia: Platform[] }>();
+
+function listas(game: Game) {
+  let cache = listasCache.get(game);
+  if (!cache) {
+    cache = {
+      solidas: game.level.platforms.filter((p) => !p.broken && p.kind !== "oneway"),
+      unaVia: game.level.platforms.filter((p) => !p.broken && p.kind === "oneway"),
+    };
+    listasCache.set(game, cache);
+  }
+  return cache;
+}
+
+/** Se llama cuando una caja se rompe: la lista deja de valer. */
+function olvidarListas(game: Game) {
+  listasCache.delete(game);
+}
+
 function solids(game: Game): Platform[] {
-  return game.level.platforms.filter((p) => !p.broken && p.kind !== "oneway");
+  return listas(game).solidas;
 }
 
 function setHeight(p: Player, h: number) {
@@ -640,10 +712,8 @@ function resolveY(game: Game, dt: number) {
   p.onIce = false;
 
   const ignoreOne = p.dropT > 0 || p.vy < 0;
-  const list: Platform[] = [
-    ...solids(game),
-    ...game.level.platforms.filter((pl) => !pl.broken && pl.kind === "oneway" && !ignoreOne),
-  ];
+  const cache = listas(game);
+  const list: Platform[] = ignoreOne ? cache.solidas : cache.solidas.concat(cache.unaVia);
 
   for (const s of list) {
     if (p.hanging && s === p.hangPlat) continue;
@@ -674,6 +744,7 @@ function resolveY(game: Game, dt: number) {
           const cy = c.y + c.h / 2;
           if (Math.hypot(cx - (p.x + p.w / 2), cy - (p.y + p.h)) < 96) {
             c.broken = true;
+            olvidarListas(game);
             burst(game, cx, cy, 14, "#8a5a3c", 200);
           }
         }

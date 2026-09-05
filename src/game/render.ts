@@ -465,10 +465,24 @@ export function renderGame(ctx: CanvasRenderingContext2D, game: Game, art: ArtPa
       ctx.fill();
     } else if (h.kind === "snake") {
       const img = art?.snake;
+      const alerta = h.alert ?? 0;
+      // Cuando ha reparado en el héroe mira hacia él, no hacia su vaivén.
       const t = game.time * ((Math.PI * 2) / (h.period ?? 3.2)) + (h.phase ?? 0);
-      const facing = Math.cos(t) >= 0 ? 1 : -1;
+      const haciaElHeroe = game.player.x + game.player.w / 2 - (h.x + h.w / 2);
+      const facing = alerta > 0.55 ? (haciaElHeroe >= 0 ? 1 : -1) : Math.cos(t) >= 0 ? 1 : -1;
       const sx = h.x - cam.x + h.w / 2;
       const sy = h.y - cam.y + h.h;
+      if (alerta > 0.2) {
+        // Un resplandor de aviso: se ve venir antes de que salte.
+        const pulso = 0.5 + 0.5 * Math.sin(game.time * 12);
+        const halo = ctx.createRadialGradient(sx, sy - 16, 4, sx, sy - 16, 54);
+        halo.addColorStop(0, `rgba(214,86,40,${0.34 * alerta * (0.6 + 0.4 * pulso)})`);
+        halo.addColorStop(1, "rgba(214,86,40,0)");
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(sx, sy - 16, 54, 0, Math.PI * 2);
+        ctx.fill();
+      }
       const dw = 112;
       const dh = 46;
       if (img && img.complete) {

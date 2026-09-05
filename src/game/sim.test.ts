@@ -257,6 +257,69 @@ test("tocar la meta gana el nivel", () => {
   assert.equal(g.status, "win");
 });
 
+test("la serpiente repara en el héroe y va a por él, sin salir de su tramo", () => {
+  // Serpiente con un tramo de 120 px a cada lado de x = 400.
+  const serpiente = {
+    kind: "snake" as const,
+    x: 400,
+    y: 470,
+    w: 40,
+    h: 24,
+    ox: 400,
+    oy: 470,
+    ax: 120,
+    period: 3.2,
+  };
+  const g = partida({ hazards: [serpiente], spawnX: 300, spawnY: 458 });
+  const viva = g.level.hazards[0];
+  assert.ok(viva);
+
+  // De lejos, ni se entera.
+  g.player.x = 60;
+  correr(g, 30);
+  assert.ok((viva.alert ?? 0) < 0.2, "a esa distancia no debería haber reparado en nadie");
+
+  // Cerca y a su altura: despierta y viene.
+  g.player.x = 300;
+  g.player.y = 458;
+  const desde = viva.x;
+  correr(g, 60);
+  assert.ok((viva.alert ?? 0) > 0.55, "debería haber reparado en el héroe");
+  assert.ok(viva.x < desde, "y haberse movido hacia él");
+
+  // Pero nunca más allá de su tramo.
+  for (let i = 0; i < 600; i++) {
+    g.player.x = 40;
+    g.player.y = 458;
+    updateGame(g, QUIETO, FIXED_DT);
+    assert.ok(viva.x >= 400 - 120 - 1, "no puede abandonar el trecho que defiende");
+  }
+});
+
+test("una caja rota deja de estorbar el paso", () => {
+  // Rok cae sobre una caja apoyada en el suelo y la revienta con su golpe.
+  const g = partida(
+    {
+      platforms: [suelo(0, 620, 800), suelo(160, 540, 64, 80, "crate")],
+      spawnX: 175,
+      spawnY: 300,
+    },
+    "rok",
+  );
+  const caja = g.level.platforms[1];
+  assert.equal(caja?.kind, "crate");
+
+  correr(g, 60, acciones({ down: true }));
+  assert.equal(caja?.broken, true, "el golpe de Rok debe romperla");
+
+  // Y con ella rota, el héroe termina en el suelo de abajo, no encima del hueco.
+  correr(g, 90);
+  assert.ok(
+    g.player.y + g.player.h > 560,
+    "tras romperse, la caja ya no puede seguir sosteniendo al héroe",
+  );
+});
+
 test("el modo asistido da más vidas, más aire y más margen", () => {
   const normal = createGame(nivel(), getCharacter("rok"));
   const asistido = createGame(nivel(), getCharacter("rok"), undefined, { shake: 1, assist: true });
