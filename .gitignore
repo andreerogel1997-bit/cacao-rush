@@ -22,3 +22,7 @@ _masters/
 .DS_Store
 Thumbs.db
 *.log
+
+# Material de la plataforma de origen (contrato y skills internas de Grok).
+# Se conserva en el Drive, dentro de _masters/, pero no se publica.
+docs/origen-grok/
