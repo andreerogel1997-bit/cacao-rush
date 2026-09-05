@@ -48,15 +48,19 @@ function skyVeil(ctx: CanvasRenderingContext2D): CanvasGradient {
 
 export function cameraOf(game: Game): Cam {
   const p = game.player;
-  const look = p.facing * 90;
-  let x = p.x + p.w / 2 - VIEW_W / 2 + look;
-  let y = p.y + p.h / 2 - VIEW_H / 2 - 36;
+  let x = p.x + p.w / 2 - VIEW_W / 2 + game.camLook;
+  let y = game.camY - VIEW_H / 2 - 36;
   x = Math.max(0, Math.min(x, game.level.width - VIEW_W));
   y = Math.max(0, Math.min(y, game.level.height - VIEW_H));
-  const shake = game.trauma * game.trauma;
-  if (shake > 0.001) {
-    x += (Math.random() * 2 - 1) * 14 * shake;
-    y += (Math.random() * 2 - 1) * 10 * shake;
+
+  // La sacudida se dibujaba con Math.random, así que temblaba distinto en cada
+  // fotograma y no se podía repetir una partida. Ahora sale del reloj del
+  // juego, y el jugador puede bajarla o apagarla.
+  const fuerza = game.trauma * game.trauma * game.shake;
+  if (fuerza > 0.001) {
+    const t = game.time * 46;
+    x += Math.sin(t * 1.7) * 14 * fuerza;
+    y += Math.cos(t * 2.3) * 10 * fuerza;
   }
   return { x: Math.round(x), y: Math.round(y) };
 }

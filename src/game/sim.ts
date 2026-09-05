@@ -1,6 +1,6 @@
 import { sfxCheck, sfxCoin, sfxDash, sfxDouble, sfxGoal, sfxHurt, sfxJump, sfxLand, sfxPound, sfxSave, sfxWin } from "./audio.ts";
-import type { Actions, CharacterDef, Game, Hazard, Level, Particle, Platform, Player } from "./types.ts";
-import { MAX_LIVES } from "./types.ts";
+import type { Actions, Ajustes, CharacterDef, Game, Hazard, Level, Particle, Platform, Player } from "./types.ts";
+import { AJUSTES_POR_DEFECTO, ASSIST_LIVES, MAX_LIVES } from "./types.ts";
 
 const PW = 26;
 const PH = 42;
@@ -103,6 +103,7 @@ export function createGame(
   level: Level,
   character: CharacterDef,
   resume?: { x: number; y: number; lives?: number; coins?: number; taken?: boolean[]; poleIndex?: number },
+  ajustes: Ajustes = AJUSTES_POR_DEFECTO,
 ): Game {
   const platforms = level.platforms.map((p) => ({ ...p, broken: false, dx: 0, dy: 0, move: p.move ? { ...p.move } : undefined }));
   const hazards = level.hazards.map((h) => ({ ...h }));
@@ -117,14 +118,16 @@ export function createGame(
     checkpoints,
     goal: { ...level.goal, taken: false },
   };
-  const maxBreath = character.id === "maya" ? 14 : 7;
+  const base = character.id === "maya" ? 14 : 7;
+  // En modo asistido el aire rinde la mitad más y las vidas suben a ocho.
+  const maxBreath = ajustes.assist ? base * 1.5 : base;
   const sx = resume?.x ?? level.spawnX;
   const sy = resume?.y ?? level.spawnY;
   const game: Game = {
     level: cloned,
     character,
     player: makePlayer(sx, sy, maxBreath),
-    lives: resume?.lives ?? MAX_LIVES,
+    lives: resume?.lives ?? (ajustes.assist ? ASSIST_LIVES : MAX_LIVES),
     coins: resume?.coins ?? coins.filter((c) => c.taken).length,
     totalCoins: coins.length,
     bagX: sx - 28,
@@ -151,6 +154,10 @@ export function createGame(
     poleIndex: pole,
     foundSecret: null,
     poleLockT: 0,
+    camLook: 0,
+    camY: sy + PH / 2,
+    shake: ajustes.shake,
+    assist: ajustes.assist,
   };
   ridePoles(game);
   const cp = game.level.checkpoints[pole];
@@ -244,7 +251,7 @@ function kill(game: Game) {
   }
   game.status = "dead";
   game.deathT = 0.7;
-  game.player.invuln = 1.4;
+  game.player.invuln = game.assist ? 2.2 : 1.4;
 }
 
 function ridePoles(game: Game) {
@@ -267,8 +274,11 @@ function respawn(game: Game) {
     game.spawnY = cp.y + cp.h - PH;
   }
   const p = makePlayer(game.spawnX, game.spawnY, game.player.maxBreath);
-  p.invuln = 1.2;
+  p.invuln = game.assist ? 2 : 1.2;
   game.player = p;
+  // La cámara se planta en el punto de reaparición en vez de barrer el mapa.
+  game.camY = game.spawnY + p.h / 2;
+  game.camLook = 0;
   game.status = "playing";
   game.bagX = p.x - 30;
   game.bagY = p.y;
@@ -1136,6 +1146,17 @@ function step(game: Game, input: Actions, dt: number, first: boolean) {
     }
     hazards(game);
   }
+
+  // Cámara. El adelanto sigue a la mirada con retardo, para que girar no dé un
+  // tirón; la altura solo se mueve cuando el héroe sale de una banda central,
+  // más estrecha en el suelo que en el aire —así los saltos no marean—.
+  const lookTarget = p.facing * 96;
+  game.camLook += (lookTarget - game.camLook) * Math.min(1, 3.4 * dt);
+  const centro = p.y + p.h / 2;
+  const banda = p.grounded ? 44 : 104;
+  if (centro < game.camY - banda) game.camY = centro + banda;
+  else if (centro > game.camY + banda) game.camY = centro - banda;
+  if (p.grounded) game.camY += (centro - game.camY) * Math.min(1, 2.6 * dt);
 
   const follow = 1 - Math.exp(-10 * dt);
   const bagTargetX = p.x + p.w / 2 - p.facing * 34;

@@ -39,7 +39,7 @@ import { discoverSecret, loadSave, recordWin, writeResume, writeSave, type SaveD
 import { cameraOf, renderGame } from "@/game/render";
 import { createGame, updateGame } from "@/game/sim";
 import { getDossier, getStory, type StoryCard } from "@/game/stories";
-import type { CharacterId, Game } from "@/game/types";
+import type { Ajustes, CharacterId, Game } from "@/game/types";
 import { CAMPAIGN_COUNT, FIXED_DT, MAX_LIVES, VIEW_H, VIEW_W, WORLD_COUNT, WORLD_TOTAL } from "@/game/types";
 
 type Screen = "title" | "chars" | "worlds" | "how" | "play";
@@ -75,6 +75,8 @@ export function GameApp() {
     muted: false,
     secrets: [],
     resume: null,
+    assist: false,
+    shake: 1,
   });
   const [charId, setCharId] = useState<CharacterId>(save.character);
   const [levelIndex, setLevelIndex] = useState(0);
@@ -101,6 +103,19 @@ export function GameApp() {
   const introRef = useRef(false);
   const spawnRef = useRef<{ x: number; y: number; lives?: number; coins?: number; taken?: boolean[]; poleIndex?: number } | null>(null);
   const skipIntroRef = useRef(false);
+
+  // Lo que el jugador ha decidido sobre dificultad y sacudida. La simulación
+  // los recibe al crear la partida, así que cambian al reiniciar el nivel.
+  const ajustes: Ajustes = { shake: save.shake, assist: save.assist };
+
+  function guardarAjuste(patch: Partial<SaveData>) {
+    const next = { ...save, ...patch };
+    setSave(next);
+    writeSave(next);
+    // La sacudida se puede cambiar en caliente; la ayuda espera al reinicio.
+    const g = gameRef.current;
+    if (g && typeof patch.shake === "number") g.shake = patch.shake;
+  }
 
   // El bucle propone un HUD sesenta veces por segundo, pero sus valores cambian
   // de tanto en tanto. Comparar aquí evita que React reconcilie el árbol entero
@@ -145,7 +160,7 @@ export function GameApp() {
     const ch = getCharacter(charId);
     const level = LEVELS[levelIndex];
     if (!level) return;
-    const game = createGame(level, ch);
+    const game = createGame(level, ch, undefined, ajustes);
     gameRef.current = game;
     resetMusic();
     applyHud({
@@ -270,7 +285,7 @@ export function GameApp() {
       introRef.current = false;
       setIntro(null);
     }
-    const game = createGame(level, ch, resume);
+    const game = createGame(level, ch, resume, ajustes);
     gameRef.current = game;
     resetMusic();
     applyHud({
@@ -786,6 +801,35 @@ export function GameApp() {
               {hud.status === "paused" && !intro && (
                 <Overlay>
                   <h3 className="font-display text-4xl">Pausa</h3>
+
+                  <div className="mt-6 w-full max-w-sm space-y-3 text-left">
+                    <Ajuste
+                      titulo="Modo asistido"
+                      detalle={
+                        save.assist
+                          ? "Ocho vidas, más aire y más margen tras un golpe."
+                          : "Cinco vidas. Reinicia el mundo para aplicar el cambio."
+                      }
+                      activo={save.assist}
+                      onToggle={() => guardarAjuste({ assist: !save.assist })}
+                    />
+                    <Ajuste
+                      titulo="Sacudida de cámara"
+                      detalle={
+                        save.shake === 0
+                          ? "Apagada."
+                          : save.shake < 1
+                            ? "A la mitad."
+                            : "Completa."
+                      }
+                      activo={save.shake > 0}
+                      onToggle={() =>
+                        guardarAjuste({ shake: save.shake === 1 ? 0.5 : save.shake === 0.5 ? 0 : 1 })
+                      }
+                      etiquetaBoton={save.shake === 1 ? "Bajar" : save.shake === 0.5 ? "Apagar" : "Volver"}
+                    />
+                  </div>
+
                   <div className="mt-6 flex flex-wrap justify-center gap-3">
                     <Primary
                       onClick={() => {
@@ -943,6 +987,40 @@ function HudBar({
           {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
         </button>
       </div>
+    </div>
+  );
+}
+
+function Ajuste({
+  titulo,
+  detalle,
+  activo,
+  onToggle,
+  etiquetaBoton,
+}: {
+  titulo: string;
+  detalle: string;
+  activo: boolean;
+  onToggle: () => void;
+  etiquetaBoton?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface/80 px-4 py-3">
+      <div>
+        <p className="font-display text-lg leading-tight">{titulo}</p>
+        <p className="text-xs leading-snug text-muted">{detalle}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={activo}
+        className={
+          "h-10 shrink-0 rounded-lg border px-4 text-sm font-medium " +
+          (activo ? "border-accent bg-elevated text-fg" : "border-border bg-surface text-muted")
+        }
+      >
+        {etiquetaBoton ?? (activo ? "Quitar" : "Activar")}
+      </button>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { getCharacter } from "./characters.ts";
 import { createGame, updateGame } from "./sim.ts";
 import type { Actions, CharacterId, Level, Platform } from "./types.ts";
-import { FIXED_DT, MAX_LIVES } from "./types.ts";
+import { ASSIST_LIVES, FIXED_DT, MAX_LIVES } from "./types.ts";
 
 const QUIETO: Actions = {
   moveX: 0,
@@ -255,6 +255,46 @@ test("tocar la meta gana el nivel", () => {
   const g = partida({ goal: { x: 96, y: 440, w: 60, h: 60, taken: false } });
   correr(g, 40);
   assert.equal(g.status, "win");
+});
+
+test("el modo asistido da más vidas, más aire y más margen", () => {
+  const normal = createGame(nivel(), getCharacter("rok"));
+  const asistido = createGame(nivel(), getCharacter("rok"), undefined, { shake: 1, assist: true });
+
+  assert.equal(normal.lives, MAX_LIVES);
+  assert.equal(asistido.lives, ASSIST_LIVES);
+  assert.ok(asistido.player.maxBreath > normal.player.maxBreath, "el aire rinde más");
+
+  // Tras un golpe, la invulnerabilidad es más larga.
+  const conPinchos = { hazards: [{ kind: "spikes" as const, x: 90, y: 470, w: 60, h: 30 }], spawnY: 400 };
+  const a = createGame(nivel(conPinchos), getCharacter("rok"));
+  const b = createGame(nivel(conPinchos), getCharacter("rok"), undefined, { shake: 1, assist: true });
+  correr(a, 30);
+  correr(b, 30);
+  assert.ok(b.player.invuln > a.player.invuln, "el modo asistido perdona más tiempo");
+});
+
+test("la cámara mira hacia donde mira el héroe", () => {
+  const g = partida();
+  correr(g, 40);
+  correr(g, 40, acciones({ moveX: 1 }));
+  assert.ok(g.camLook > 40, "corriendo a la derecha, la cámara se adelanta a la derecha");
+
+  correr(g, 60, acciones({ moveX: -1 }));
+  assert.ok(g.camLook < -40, "y al girar, se adelanta al otro lado");
+});
+
+test("la misma partida jugada igual da exactamente la misma cámara", () => {
+  const jugar = () => {
+    const g = partida();
+    correr(g, 30);
+    correr(g, 20, acciones({ moveX: 1, jump: true, jumpHeld: true }));
+    correr(g, 40, acciones({ moveX: -1 }));
+    return { look: g.camLook, y: g.camY };
+  };
+  const uno = jugar();
+  const dos = jugar();
+  assert.deepEqual(uno, dos, "la cámara no puede depender del azar");
 });
 
 test("estar en pausa congela la simulación", () => {

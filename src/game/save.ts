@@ -24,6 +24,10 @@ export type SaveData = {
   muted: boolean;
   secrets: WorldId[];
   resume: ResumeData | null;
+  /** Modo asistido: ocho vidas, más aire y más margen tras un golpe. */
+  assist: boolean;
+  /** Cuánta sacudida de cámara acepta el jugador, de 0 a 1. */
+  shake: number;
 };
 
 const defaults = (): SaveData => ({
@@ -34,6 +38,8 @@ const defaults = (): SaveData => ({
   muted: false,
   secrets: [],
   resume: null,
+  assist: false,
+  shake: 1,
 });
 
 export function loadSave(): SaveData {
@@ -56,6 +62,8 @@ export function loadSave(): SaveData {
       unlocked,
       secrets,
       resume: parsed.resume ?? null,
+      assist: parsed.assist === true,
+      shake: typeof parsed.shake === "number" ? Math.max(0, Math.min(1, parsed.shake)) : 1,
     };
   } catch {
     return base;

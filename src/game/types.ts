@@ -258,4 +258,23 @@ export type Game = {
   poleIndex: number;
   foundSecret: WorldId | null;
   poleLockT: number;
+  /** Adelanto horizontal de la cámara; sigue a la mirada con retardo. */
+  camLook: number;
+  /** Altura que mira la cámara: solo se mueve al salir de la banda central. */
+  camY: number;
+  /** Cuánta sacudida acepta el jugador, de 0 a 1. */
+  shake: number;
+  /** Modo asistido: más vidas, más aire y más margen tras un golpe. */
+  assist: boolean;
 };
+
+/** Ajustes que el jugador controla y la simulación respeta. */
+export type Ajustes = {
+  shake: number;
+  assist: boolean;
+};
+
+export const AJUSTES_POR_DEFECTO: Ajustes = { shake: 1, assist: false };
+
+/** Vidas con las que arranca el modo asistido. */
+export const ASSIST_LIVES = 8;
