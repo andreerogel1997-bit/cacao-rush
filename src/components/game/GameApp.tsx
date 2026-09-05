@@ -447,6 +447,10 @@ export function GameApp() {
       gameRef.current = null;
       window.__controlsTest = undefined;
     };
+    // `ajustes` queda fuera a propósito: incluirlo reiniciaría el mundo cada vez
+    // que se toca un interruptor. La sacudida se aplica en caliente y la ayuda
+    // entra en el siguiente reinicio, que es lo que dice la propia pantalla.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, charId, levelIndex]);
 
   function startLevel(i: number, opts?: { continue?: boolean }) {
@@ -500,7 +504,6 @@ export function GameApp() {
 
   useEffect(() => {
     if (hud.status === "win") onWin();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hud.status]);
 
   function toggleMute() {
@@ -531,6 +534,9 @@ export function GameApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // `dismissIntro` se recrea en cada render; incluirlo reengancharía el
+    // atajo de teclado sin motivo. Lo que importa es si hay relato abierto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intro]);
 
   const ch = getCharacter(charId);

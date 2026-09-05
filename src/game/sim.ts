@@ -567,7 +567,7 @@ function snapClimbWall(game: Game, p: Player): boolean {
   return probeWall(game, dir) !== 0;
 }
 
-function applyClimb(game: Game, input: Actions, dt: number) {
+function applyClimb(game: Game, input: Actions) {
   const p = game.player;
   const nix = game.character.id === "nix";
   if (p.hanging) {
@@ -1032,7 +1032,7 @@ function step(game: Game, input: Actions, dt: number, first: boolean) {
     p.hangPlat = null;
     if (p.h < PH) setHeight(p, PH);
   } else if (p.climbing || p.hanging) {
-    applyClimb(game, input, dt);
+    applyClimb(game, input);
   } else {
     const ice = p.grounded && p.onIce;
     const accel = p.grounded ? (ice ? 1600 : ACCEL_G) : ACCEL_A;
