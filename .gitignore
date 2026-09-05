@@ -1,0 +1,24 @@
+# Dependencias — viven fuera del Drive (~/.cortex-local/games/cacao-rush/node_modules)
+node_modules
+
+# Build
+dist
+.output
+.vercel
+.tanstack
+.nitro
+*.tsbuildinfo
+
+# Masters de arte: 352 MB de fuentes originales. Quedan en el Drive (respaldo de
+# versiones 30 días) pero nunca entran a git ni al build.
+_masters/
+
+# Entorno
+.env
+.env.*
+!.env.example
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
