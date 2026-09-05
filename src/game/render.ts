@@ -9,6 +9,28 @@ export type Cam = { x: number; y: number };
 const SKY_DRIFT_X = 96;
 const SKY_DRIFT_Y = 48;
 
+/** Lado del tile en píxeles de pantalla. */
+const TILE = 64;
+
+const patterns = new WeakMap<HTMLImageElement, CanvasPattern>();
+
+/**
+ * El suelo se rellenaba con un `drawImage` por tile en dos bucles anidados —una
+ * plataforma ancha eran cientos de llamadas por fotograma—. Un patrón escalado
+ * pinta lo mismo de una vez y sin costuras entre tiles.
+ */
+function tilePattern(ctx: CanvasRenderingContext2D, img: HTMLImageElement): CanvasPattern | null {
+  if (!img.complete || img.naturalWidth === 0) return null;
+  const cached = patterns.get(img);
+  if (cached) return cached;
+  const pattern = ctx.createPattern(img, "repeat");
+  if (!pattern) return null;
+  const scale = TILE / img.naturalWidth;
+  pattern.setTransform(new DOMMatrix([scale, 0, 0, scale, 0, 0]));
+  patterns.set(img, pattern);
+  return pattern;
+}
+
 let veilCache: CanvasGradient | null = null;
 let veilCtx: CanvasRenderingContext2D | null = null;
 
@@ -63,27 +85,47 @@ function drawTiled(
   const sx = x - cam.x;
   const sy = y - cam.y;
   if (sx + w < -40 || sy + h < -40 || sx > VIEW_W + 40 || sy > VIEW_H + 40) return;
+
+  // Sombra proyectada: separa la plataforma del paisaje de fondo, que en varios
+  // mundos es una fotografía con tanto detalle como el propio suelo.
+  ctx.save();
+  ctx.fillStyle = "rgba(12,8,7,0.38)";
+  roundRect(ctx, sx + 3, sy + 5, w, h, 6);
+  ctx.fill();
+  ctx.restore();
+
   ctx.save();
   roundRect(ctx, sx, sy, w, h, 6);
   ctx.clip();
-  if (img && img.complete && img.naturalWidth > 0) {
-    const tw = 64;
-    const th = 64;
-    for (let ix = 0; ix < w + tw; ix += tw) {
-      for (let iy = 0; iy < h + th; iy += th) {
-        ctx.drawImage(img, sx + ix, sy + iy, tw, th);
-      }
-    }
+  const pattern = img ? tilePattern(ctx, img) : null;
+  if (pattern) {
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
   } else {
     ctx.fillStyle = tint ?? "#4a3428";
     ctx.fillRect(sx, sy, w, h);
   }
+  // Un punto de sombra propia hacia abajo: da volumen y baja el ruido del tile,
+  // que competía con el fondo hasta volver ilegible dónde se puede pisar.
+  const inner = ctx.createLinearGradient(0, sy, 0, sy + h);
+  inner.addColorStop(0, "rgba(20,14,12,0.05)");
+  inner.addColorStop(0.35, "rgba(20,14,12,0.22)");
+  inner.addColorStop(1, "rgba(20,14,12,0.45)");
+  ctx.fillStyle = inner;
+  ctx.fillRect(sx, sy, w, h);
   ctx.restore();
+
   ctx.save();
-  ctx.fillStyle = "rgba(243,230,208,0.16)";
-  ctx.fillRect(sx, sy, w, 5);
-  ctx.strokeStyle = "rgba(20,14,12,0.35)";
-  ctx.lineWidth = 1.5;
+  // Labio de luz arriba: marca la línea que el jugador puede pisar.
+  ctx.fillStyle = "rgba(255,238,205,0.34)";
+  ctx.fillRect(sx + 2, sy, w - 4, 3);
+  ctx.fillStyle = "rgba(255,238,205,0.12)";
+  ctx.fillRect(sx + 2, sy + 3, w - 4, 3);
+  ctx.strokeStyle = "rgba(14,9,8,0.72)";
+  ctx.lineWidth = 2;
   roundRect(ctx, sx, sy, w, h, 6);
   ctx.stroke();
   ctx.restore();
@@ -125,6 +167,22 @@ function drawIcicles(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
   ctx.strokeStyle = "#6a8aa0";
   ctx.lineWidth = 1;
   ctx.stroke();
+}
+
+/** Distancia de los pies al primer suelo que hay debajo, o null si no hay. */
+function shadowDrop(game: Game): number | null {
+  const p = game.player;
+  const feet = p.y + p.h;
+  const cx = p.x + p.w / 2;
+  let best: number | null = null;
+  for (const s of game.level.platforms) {
+    if (s.broken) continue;
+    if (cx < s.x || cx > s.x + s.w) continue;
+    const drop = s.y - feet;
+    if (drop < -2) continue;
+    if (best === null || drop < best) best = drop;
+  }
+  return best !== null && best <= 260 ? best : null;
 }
 
 function pick(frames: HTMLImageElement[] | undefined, i: number): HTMLImageElement | undefined {
@@ -519,6 +577,17 @@ export function renderGame(ctx: CanvasRenderingContext2D, game: Game, art: ArtPa
     const sx = c.x - cam.x;
     const sy = c.y - cam.y + bob;
     const size = kind === "fish" ? 32 : 28;
+    if (sx < -60 || sx > VIEW_W + 60 || sy < -60 || sy > VIEW_H + 60) continue;
+    // Halo: sobre un fondo con tanto detalle, un grano suelto se pierde.
+    const glow = ctx.createRadialGradient(sx, sy, 2, sx, sy, size * 0.9);
+    const tone =
+      kind === "fish" ? "126,200,212" : kind === "chocolate" ? "196,140,80" : "226,178,86";
+    glow.addColorStop(0, `rgba(${tone},0.5)`);
+    glow.addColorStop(1, `rgba(${tone},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(sx, sy, size * 0.9, 0, Math.PI * 2);
+    ctx.fill();
     if (img && img.complete) ctx.drawImage(img, sx - size / 2, sy - size / 2, size, size);
     else {
       ctx.fillStyle = kind === "fish" ? "#7ec8d4" : kind === "chocolate" ? "#6b3a1f" : "#6b3a1f";
@@ -609,6 +678,23 @@ export function renderGame(ctx: CanvasRenderingContext2D, game: Game, art: ArtPa
   const dx = p.x + p.w / 2 - cam.x;
   const dy = p.y + p.h - cam.y;
   const onWall = !p.grounded && p.wallDir !== 0 && p.wallLock <= 0 && !p.hanging;
+
+  // Sombra de contacto: dice dónde caen los pies. Sin ella, sobre un fondo
+  // fotográfico, el héroe parece flotar.
+  if (!p.inWater) {
+    const drop = shadowDrop(game);
+    if (drop != null) {
+      const fade = Math.max(0, 1 - drop / 240);
+      ctx.save();
+      ctx.globalAlpha = 0.14 + 0.3 * fade;
+      ctx.fillStyle = "#0c0807";
+      ctx.beginPath();
+      ctx.ellipse(dx, dy + drop, 20 * (0.5 + fade * 0.5), 6 * (0.5 + fade * 0.5), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   ctx.save();
   if (p.invuln > 0 && Math.floor(p.invuln * 20) % 2 === 0) ctx.globalAlpha = 0.45;
   ctx.translate(dx, dy);
@@ -642,6 +728,13 @@ export function renderGame(ctx: CanvasRenderingContext2D, game: Game, art: ArtPa
       ctx.drawImage(spr, -dw / 2 - 32, -dh, dw, dh);
       ctx.restore();
     }
+    // Halo oscuro pegado a la silueta: el héroe deja de confundirse con el
+    // paisaje sin repintar un solo fotograma.
+    ctx.save();
+    ctx.shadowColor = "rgba(10,7,6,0.8)";
+    ctx.shadowBlur = 11;
+    ctx.drawImage(spr, -dw / 2, -dh, dw, dh);
+    ctx.restore();
     ctx.drawImage(spr, -dw / 2, -dh, dw, dh);
   } else {
     ctx.fillStyle = game.character.color;

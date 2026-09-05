@@ -251,6 +251,15 @@ export function GameApp() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // El lienzo medía 960×540 y se estiraba por CSS, así que en pantallas
+    // Retina y en el móvil el juego se veía borroso. Se dibuja a la densidad
+    // real del dispositivo y el render sigue trabajando en las mismas
+    // coordenadas lógicas.
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(VIEW_W * dpr);
+    canvas.height = Math.round(VIEW_H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     const ch = getCharacter(charId);
     const level = LEVELS[levelIndex];
     if (!level) return;
@@ -734,7 +743,7 @@ export function GameApp() {
 
       {screen === "play" && (
         <div className="flex min-h-dvh flex-col bg-bg">
-          <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col">
+          <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col justify-center">
             <HudBar
               hud={hud}
               muted={muted}
@@ -756,7 +765,7 @@ export function GameApp() {
                 ref={canvasRef}
                 width={VIEW_W}
                 height={VIEW_H}
-                className="h-auto w-full touch-none bg-bg"
+                className="mx-auto block max-h-[calc(100dvh-3.5rem)] w-full touch-none bg-bg object-contain"
                 style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}` }}
               />
 
