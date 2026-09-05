@@ -30,13 +30,23 @@ export type ArtPack = {
   tile: Record<string, HTMLImageElement>;
 };
 
+/**
+ * En GitHub Pages el juego cuelga de /<repo>/ y no de la raíz del dominio, así
+ * que toda ruta absoluta de asset se resuelve contra la base del build.
+ */
+export function assetUrl(path: string): string {
+  if (!path.startsWith("/")) return path;
+  const base = import.meta.env.BASE_URL || "/";
+  return base.replace(/\/$/, "") + path;
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error(`No se pudo cargar ${src}`));
-    img.src = src;
+    img.src = assetUrl(src);
   });
 }
 
