@@ -30,6 +30,9 @@ jobs:
       - name: Comprobar tipos
         run: npm run typecheck
 
+      - name: Probar la física y validar los diecisiete mundos
+        run: npm test
+
       - name: Construir
         run: npm run build
         env:
