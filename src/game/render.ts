@@ -5,6 +5,25 @@ import { VIEW_H, VIEW_W } from "./types";
 
 export type Cam = { x: number; y: number };
 
+/** Recorrido total del cielo entre un extremo y otro del nivel, en píxeles. */
+const SKY_DRIFT_X = 96;
+const SKY_DRIFT_Y = 48;
+
+let veilCache: CanvasGradient | null = null;
+let veilCtx: CanvasRenderingContext2D | null = null;
+
+/** El degradado del velo no cambia nunca; se rehace solo si cambia el contexto. */
+function skyVeil(ctx: CanvasRenderingContext2D): CanvasGradient {
+  if (veilCache && veilCtx === ctx) return veilCache;
+  const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  g.addColorStop(0, "rgba(20,14,12,0.16)");
+  g.addColorStop(0.55, "rgba(20,14,12,0.30)");
+  g.addColorStop(1, "rgba(20,14,12,0.46)");
+  veilCache = g;
+  veilCtx = ctx;
+  return g;
+}
+
 export function cameraOf(game: Game): Cam {
   const p = game.player;
   const look = p.facing * 90;
@@ -26,7 +45,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.moveTo(x + rr, y);
   ctx.arcTo(x + w, y, x + w, y + h, rr);
   ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 }
@@ -198,20 +217,24 @@ export function renderGame(ctx: CanvasRenderingContext2D, game: Game, art: ArtPa
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
   const sky = art?.sky[level.sky];
-  if (sky && sky.complete) {
-    const parX = cam.x * 0.15;
-    const parY = cam.y * 0.05;
-    ctx.drawImage(sky, -parX * 0.2, -parY * 0.3 - 20, VIEW_W + 80, VIEW_H + 60);
-    ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.drawImage(sky, -cam.x * 0.08, VIEW_H * 0.18 - cam.y * 0.04, VIEW_W + 120, VIEW_H * 0.9);
-    ctx.restore();
+  if (sky && sky.complete && sky.naturalWidth > 0) {
+    // Una sola capa de cielo, con recorrido propio y siempre cubriendo el
+    // encuadre. Antes se dibujaba dos veces —la segunda al 35 % y desplazada
+    // hacia abajo—, lo que marcaba una costura horizontal a media pantalla en
+    // todos los mundos.
+    const spanX = Math.max(1, level.width - VIEW_W);
+    const spanY = Math.max(1, level.height - VIEW_H);
+    const ox = -(cam.x / spanX) * SKY_DRIFT_X;
+    const oy = -(cam.y / spanY) * SKY_DRIFT_Y;
+    ctx.drawImage(sky, ox, oy, VIEW_W + SKY_DRIFT_X, VIEW_H + SKY_DRIFT_Y);
   } else {
     ctx.fillStyle = level.fog;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   }
 
-  ctx.fillStyle = "rgba(20,14,12,0.18)";
+  // Velo atmosférico: aparta el paisaje del plano donde se juega. Denso abajo,
+  // que es donde vive el suelo y donde el fondo competía con las plataformas.
+  ctx.fillStyle = skyVeil(ctx);
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
   if (level.waterline != null) {
