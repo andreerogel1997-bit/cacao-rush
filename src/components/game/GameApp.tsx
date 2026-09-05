@@ -13,7 +13,17 @@ import {
   ChevronDown,
   BookOpen,
 } from "lucide-react";
-import { loadArt, type ArtPack } from "@/game/assets";
+import {
+  createArt,
+  loadHero,
+  loadHeroPortraits,
+  loadProps,
+  loadWorldArt,
+  loadWorldSky,
+  TITLE_WORLD,
+  WORLD_ART,
+  type ArtPack,
+} from "@/game/assets";
 import { CHARACTERS, getCharacter } from "@/game/characters";
 import { createLevels, SECRET_WORLDS, WORLDS } from "@/game/levels";
 import {
@@ -48,10 +58,14 @@ const IDLE_INPUT = {
 export function GameApp() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const gameRef = useRef<Game | null>(null);
-  const artRef = useRef<ArtPack | null>(null);
+  // El arte llega por partes y se va acumulando en este mismo objeto; `artTick`
+  // solo existe para que React vuelva a pintar cuando entra algo nuevo.
+  const artRef = useRef<ArtPack>(createArt());
   const hudRef = useRef<(patch: Partial<Hud>) => void>(() => {});
   const restartRef = useRef<() => void>(() => {});
-  const [art, setArt] = useState<ArtPack | null>(null);
+  const [, setArtTick] = useState(0);
+  const art = artRef.current;
+  const [worldReady, setWorldReady] = useState(false);
   const [screen, setScreen] = useState<Screen>("title");
   const [save, setSave] = useState<SaveData>({
     version: 1,
@@ -88,7 +102,30 @@ export function GameApp() {
   const spawnRef = useRef<{ x: number; y: number; lives?: number; coins?: number; taken?: boolean[]; poleIndex?: number } | null>(null);
   const skipIntroRef = useRef(false);
 
-  hudRef.current = (patch) => setHud((h) => ({ ...h, ...patch }));
+  // El bucle propone un HUD sesenta veces por segundo, pero sus valores cambian
+  // de tanto en tanto. Comparar aquí evita que React reconcilie el árbol entero
+  // del juego en cada fotograma; antes esto era el mayor gasto fuera del canvas.
+  const hudMirror = useRef<Hud>(hud);
+  hudRef.current = (patch) => {
+    const prev = hudMirror.current;
+    let changed = false;
+    for (const key of Object.keys(patch) as (keyof Hud)[]) {
+      if (prev[key] !== patch[key]) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return;
+    const next = { ...prev, ...patch };
+    hudMirror.current = next;
+    setHud(next);
+  };
+
+  /** Reemplaza el HUD entero (cambio de nivel o reinicio). */
+  function applyHud(next: Hud) {
+    hudMirror.current = next;
+    setHud(next);
+  }
 
   function haltVoice() {
     stopNarration();
@@ -111,7 +148,7 @@ export function GameApp() {
     const game = createGame(level, ch);
     gameRef.current = game;
     resetMusic();
-    setHud({
+    applyHud({
       coins: 0,
       total: game.totalCoins,
       lives: game.lives,
@@ -129,21 +166,72 @@ export function GameApp() {
   }
   restartRef.current = hardRestart;
 
+  // El arte se pide por tramos, según lo que se esté mirando. Antes se
+  // descargaban los diecinueve megas de golpe —doscientas cincuenta peticiones,
+  // casi todas en fila— antes de poder tocar el primer botón.
+
+  // Portada: basta el cielo del fondo.
   useEffect(() => {
     let live = true;
-    void loadArt()
-      .then((a) => {
-        if (!live) return;
-        artRef.current = a;
-        setArt(a);
-      })
-      .catch(() => {
-        if (live) setArt(null);
-      });
+    void loadWorldSky(artRef.current, TITLE_WORLD).then(() => {
+      if (live) setArtTick((n) => n + 1);
+    });
     return () => {
       live = false;
     };
   }, []);
+
+  // Los retratos de los cinco héroes, al abrir la selección.
+  useEffect(() => {
+    if (screen !== "chars") return;
+    let live = true;
+    void loadHeroPortraits(artRef.current).then(() => {
+      if (live) setArtTick((n) => n + 1);
+    });
+    return () => {
+      live = false;
+    };
+  }, [screen]);
+
+  // Las miniaturas de la pantalla de mundos entran una a una, para que la
+  // cuadrícula se vaya poblando en vez de quedarse en negro hasta el final.
+  useEffect(() => {
+    if (screen !== "worlds") return;
+    let live = true;
+    void (async () => {
+      for (const world of WORLD_ART) {
+        if (!live) return;
+        await loadWorldSky(artRef.current, world);
+        if (live) setArtTick((n) => n + 1);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [screen]);
+
+  // Al jugar: el héroe elegido, el mundo donde cae y los objetos sueltos.
+  useEffect(() => {
+    if (screen !== "play") return;
+    const level = LEVELS[levelIndex];
+    if (!level) return;
+    let live = true;
+    setWorldReady(false);
+    const jobs = [
+      loadHero(artRef.current, charId),
+      loadWorldArt(artRef.current, level.sky),
+      loadProps(artRef.current),
+    ];
+    if (level.tile !== level.sky) jobs.push(loadWorldArt(artRef.current, level.tile));
+    void Promise.all(jobs).then(() => {
+      if (!live) return;
+      setArtTick((n) => n + 1);
+      setWorldReady(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [screen, charId, levelIndex]);
 
   useEffect(() => {
     const loaded = loadSave();
@@ -176,7 +264,7 @@ export function GameApp() {
     const game = createGame(level, ch, resume);
     gameRef.current = game;
     resetMusic();
-    setHud({
+    applyHud({
       coins: game.coins,
       total: game.totalCoins,
       lives: game.lives,
@@ -269,7 +357,7 @@ export function GameApp() {
           name: live.level.name,
           power: live.character.power,
           dash: live.player.dashCd <= 0 ? 1 : 0,
-          breath: live.player.breath,
+          breath: Math.round(live.player.breath * 10) / 10,
           maxBreath: live.player.maxBreath,
           canSwim: !!live.level.canSwim,
           inWater: live.player.inWater,
@@ -671,6 +759,12 @@ export function GameApp() {
                 className="h-auto w-full touch-none bg-bg"
                 style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}` }}
               />
+
+              {!worldReady && (
+                <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-bg/70">
+                  <p className="font-display text-2xl text-cream">Cargando el mundo…</p>
+                </div>
+              )}
 
               {intro && (
                 <StoryIntro
