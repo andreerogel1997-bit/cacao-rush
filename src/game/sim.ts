@@ -168,6 +168,9 @@ export function createGame(
     game.player.y = game.spawnY;
     game.bagX = game.player.x - 28;
     game.bagY = game.player.y;
+    // La cámara se había apuntado al arranque del nivel; si la partida sigue
+    // desde un tótem, tiene que mirar ahí desde el primer fotograma.
+    game.camY = game.spawnY + PH / 2;
   }
   return game;
 }

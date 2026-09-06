@@ -32,6 +32,12 @@ const keys = new Set<string>();
 const injected = new Set<string>();
 const touch: TouchBits = { left: false, right: false, jump: false, down: false, power: false };
 
+// Salto y poder son "flancos": importan solo en el instante de pulsar. Se
+// guardan hasta que un paso de la simulación los consuma, porque el bucle de
+// pantalla puede dar vueltas sin ejecutar ningún paso —a 120 Hz, la mitad de
+// ellas— y antes la pulsación se perdía en esas vueltas: uno de cada dos
+// saltos no salía. Pausa y reinicio se atienden en el propio fotograma, así
+// que siguen siendo flancos de un solo fotograma.
 let jumpEdge = false;
 let powerEdge = false;
 let pauseEdge = false;
@@ -60,15 +66,19 @@ function clearHeld() {
   keys.clear();
 }
 
+// Antes se registraba una función anónima nueva en cada bindInput y nunca se
+// quitaba: cada entrada al juego dejaba un oyente más colgado del documento.
+function onVisibility() {
+  if (document.hidden) clearHeld();
+}
+
 export function bindInput() {
   if (bound || typeof window === "undefined") return;
   bound = true;
   window.addEventListener("keydown", onKeyDown, { passive: false });
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", clearHeld);
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearHeld();
-  });
+  document.addEventListener("visibilitychange", onVisibility);
 }
 
 export function unbindInput() {
@@ -77,9 +87,19 @@ export function unbindInput() {
   window.removeEventListener("keydown", onKeyDown);
   window.removeEventListener("keyup", onKeyUp);
   window.removeEventListener("blur", clearHeld);
+  document.removeEventListener("visibilitychange", onVisibility);
+  // Una tecla que quedó pulsada al salir del juego no puede seguir "pulsada"
+  // cuando se vuelve a entrar.
+  clearHeld();
 }
 
 export function setTouch(part: keyof TouchBits, down: boolean) {
+  // Un toque muy corto puede empezar y acabar entre dos lecturas del bucle; el
+  // flanco se apunta aquí mismo para que ese toque cuente como pulsación.
+  if (down && !touch[part]) {
+    if (part === "jump") jumpEdge = true;
+    if (part === "power") powerEdge = true;
+  }
   touch[part] = down;
 }
 
@@ -134,8 +154,8 @@ export function pollActions(): Actions {
   const pauseHeld = k.has("Escape") || k.has("KeyP") || k.has("__padPause");
   const restartHeld = k.has("KeyR") || k.has("__padRestart");
 
-  jumpEdge = jumpHeld && !prevJump;
-  powerEdge = powerHeld && !prevPower;
+  if (jumpHeld && !prevJump) jumpEdge = true;
+  if (powerHeld && !prevPower) powerEdge = true;
   pauseEdge = pauseHeld && !prevPause;
   restartEdge = restartHeld && !prevRestart;
   prevJump = jumpHeld;
@@ -152,6 +172,21 @@ export function pollActions(): Actions {
     pause: pauseEdge,
     restart: restartEdge,
   };
+}
+
+/**
+ * La simulación ya vio las pulsaciones pendientes: se limpian. Se llama una vez
+ * por fotograma en el que se haya ejecutado al menos un paso.
+ */
+export function consumeEdges() {
+  jumpEdge = false;
+  powerEdge = false;
+}
+
+/** El mismo input, pero sin los flancos: para los pasos extra de un fotograma. */
+export function withoutEdges(input: Actions): Actions {
+  if (!input.jump && !input.power) return input;
+  return { ...input, jump: false, power: false };
 }
 
 export type ControlsProbe = {

@@ -29,18 +29,20 @@ import { createLevels, SECRET_WORLDS, WORLDS } from "@/game/levels";
 import {
   bindInput,
   clearTouch,
+  consumeEdges,
   pollActions,
   setInjectedKeys,
   setTouch,
   unbindInput,
+  withoutEdges,
 } from "@/game/input";
 import { resetMusic, setMuted, stopNarration, tickMusic, unlockAudio } from "@/game/audio";
-import { discoverSecret, loadSave, recordWin, writeResume, writeSave, type SaveData } from "@/game/save";
+import { discoverSecret, loadSave, recordWin, writeHost, writeResume, writeSave, type SaveData } from "@/game/save";
 import { cameraOf, renderGame } from "@/game/render";
 import { createGame, updateGame } from "@/game/sim";
 import { getDossier, getStory, type StoryCard } from "@/game/stories";
 import type { Ajustes, CharacterId, Game } from "@/game/types";
-import { CAMPAIGN_COUNT, FIXED_DT, MAX_LIVES, VIEW_H, VIEW_W, WORLD_COUNT, WORLD_TOTAL } from "@/game/types";
+import { ASSIST_LIVES, CAMPAIGN_COUNT, FIXED_DT, MAX_LIVES, VIEW_H, VIEW_W, WORLD_COUNT, WORLD_TOTAL } from "@/game/types";
 
 type Screen = "title" | "chars" | "worlds" | "how" | "play";
 
@@ -75,6 +77,7 @@ export function GameApp() {
     muted: false,
     secrets: [],
     resume: null,
+    host: null,
     assist: false,
     shake: 1,
   });
@@ -84,6 +87,7 @@ export function GameApp() {
     coins: 0,
     total: 0,
     lives: MAX_LIVES,
+    maxLives: MAX_LIVES,
     status: "playing",
     name: "",
     power: "",
@@ -167,6 +171,7 @@ export function GameApp() {
       coins: 0,
       total: game.totalCoins,
       lives: game.lives,
+      maxLives: game.assist ? ASSIST_LIVES : MAX_LIVES,
       status: "playing",
       name: level.name,
       power: ch.power,
@@ -292,6 +297,7 @@ export function GameApp() {
       coins: game.coins,
       total: game.totalCoins,
       lives: game.lives,
+      maxLives: game.assist ? ASSIST_LIVES : MAX_LIVES,
       status: "playing",
       name: level.name,
       power: ch.power,
@@ -364,19 +370,29 @@ export function GameApp() {
           else if (live.status === "paused") live.status = "playing";
         }
         acc += raw;
+        // Solo el primer paso del fotograma ve las pulsaciones (salto, poder):
+        // si hay dos pasos, un toque no puede convertirse en dos saltos. Y si no
+        // hay ningún paso —pasa la mitad de las veces a 120 Hz—, la pulsación
+        // se guarda para el siguiente fotograma en vez de perderse.
+        let pasoInput = live.status === "playing" ? input : IDLE_INPUT;
+        let pasos = 0;
         while (acc >= FIXED_DT) {
           acc -= FIXED_DT;
           const blocked = introRef.current;
           if (!blocked) {
-            updateGame(live, live.status === "playing" ? input : IDLE_INPUT, FIXED_DT);
+            updateGame(live, pasoInput, FIXED_DT);
             if (live.status === "playing") tickMusic(FIXED_DT);
+            pasoInput = withoutEdges(pasoInput);
+            pasos += 1;
           }
         }
+        if (pasos > 0 || introRef.current) consumeEdges();
         renderGame(ctx, live, artRef.current, cameraOf(live));
         hudRef.current({
           coins: live.coins,
           total: live.totalCoins,
           lives: live.lives,
+          maxLives: live.assist ? ASSIST_LIVES : MAX_LIVES,
           status: live.status,
           name: live.level.name,
           power: live.character.power,
@@ -416,10 +432,37 @@ export function GameApp() {
             live.warp = null;
           } else {
             live.warp = null;
-            spawnRef.current =
-              w.spawnX != null && w.spawnY != null
-                ? { x: w.spawnX, y: w.spawnY, lives: live.lives }
-                : { x: LEVELS[dest]!.spawnX, y: LEVELS[dest]!.spawnY, lives: live.lives };
+            const vuelta = w.spawnX != null && w.spawnY != null;
+            if (vuelta) {
+              // De vuelta del secreto, el mundo de origen recupera sus granos,
+              // su tótem encendido y sus vidas. Antes se perdía todo eso y, si
+              // morías después, reaparecías al principio del nivel.
+              const host = loadSave().host;
+              const mismo = host !== null && host.levelIndex === dest;
+              spawnRef.current = {
+                x: w.spawnX!,
+                y: w.spawnY!,
+                lives: live.lives,
+                coins: mismo ? host.coins : undefined,
+                taken: mismo ? host.taken : undefined,
+                poleIndex: mismo ? host.poleIndex : undefined,
+              };
+              writeHost(null);
+            } else {
+              // De ida, se apunta cómo queda el mundo de origen para devolverlo igual.
+              writeHost({
+                world: live.level.world,
+                levelIndex: live.level.index,
+                spawnX: live.spawnX,
+                spawnY: live.spawnY,
+                poleIndex: live.poleIndex,
+                lives: live.lives,
+                coins: live.coins,
+                taken: live.level.coins.map((c) => c.taken),
+                character: charId,
+              });
+              spawnRef.current = { x: LEVELS[dest]!.spawnX, y: LEVELS[dest]!.spawnY, lives: live.lives };
+            }
             skipIntroRef.current = !w.intro;
             const chNow = getCharacter(charId);
             const destLevel = LEVELS[dest]!;
@@ -485,6 +528,15 @@ export function GameApp() {
     }
   }
 
+  /** Desde un mundo secreto, deshace el camino por el destello. */
+  function volverAlAnfitrion() {
+    const g = gameRef.current;
+    const lvl = LEVELS[levelIndex];
+    if (!g || !lvl?.portal) return;
+    g.warp = { world: lvl.portal.world, spawnX: lvl.portal.x, spawnY: lvl.portal.y, intro: false };
+    g.warpT = 0;
+  }
+
   function continueRun() {
     const r = save.resume;
     if (!r) {
@@ -541,6 +593,10 @@ export function GameApp() {
 
   const ch = getCharacter(charId);
   const dossier = getDossier(charId);
+  // En el móvil no hay tecla W: los avisos nombran el botón que sí existe.
+  const hudUi = touchUi
+    ? { ...hud, poleHint: hud.poleHint.replace(/\bW\b/g, "Salto"), note: hud.note.replace(/\bW\b/g, "Salto") }
+    : hud;
   const openFact = dossier.facts.find((f) => f.id === factId);
 
   return (
@@ -766,7 +822,7 @@ export function GameApp() {
         <div className="flex min-h-dvh flex-col bg-bg">
           <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col justify-center">
             <HudBar
-              hud={hud}
+              hud={hudUi}
               muted={muted}
               onMute={toggleMute}
               onPause={() => {
@@ -878,6 +934,11 @@ export function GameApp() {
                     {levelIndex < CAMPAIGN_COUNT - 1 && save.unlocked > levelIndex + 1 && (
                       <Primary onClick={() => startLevel(levelIndex + 1)}>Siguiente mundo</Primary>
                     )}
+                    {LEVELS[levelIndex]?.portal && (
+                      <Primary onClick={volverAlAnfitrion}>
+                        Volver a {WORLDS.find((w) => w.id === LEVELS[levelIndex]?.portal?.world)?.name ?? "la expedición"}
+                      </Primary>
+                    )}
                     <Ghost onClick={hardRestart}>Reiniciar</Ghost>
                     <Ghost onClick={() => setScreen("worlds")}>Mundos</Ghost>
                   </div>
@@ -894,14 +955,14 @@ export function GameApp() {
                 </Overlay>
               )}
 
-              {hud.note && !intro && (
+              {hudUi.note && !intro && (
                 <p className="pointer-events-none absolute bottom-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-border bg-cacao/80 px-3 py-1.5 font-display text-sm sm:hidden">
-                  {hud.note}
+                  {hudUi.note}
                 </p>
               )}
-              {hud.poleHint && !intro && (
+              {hudUi.poleHint && !intro && (
                 <p className="pointer-events-none absolute bottom-24 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-border bg-cacao/80 px-3 py-1.5 font-display text-sm">
-                  {hud.poleHint}
+                  {hudUi.poleHint}
                 </p>
               )}
 
@@ -918,6 +979,8 @@ type Hud = {
   coins: number;
   total: number;
   lives: number;
+  /** Corazones que se dibujan: cinco, u ocho en modo asistido. */
+  maxLives: number;
   status: string;
   name: string;
   power: string;
@@ -969,7 +1032,7 @@ function HudBar({
           </div>
         )}
         <div className="flex gap-0.5" aria-label={`${hud.lives} vidas`}>
-          {Array.from({ length: MAX_LIVES }, (_, i) => (
+          {Array.from({ length: hud.maxLives }, (_, i) => (
             <Heart
               key={i}
               className={"size-4 " + (i < hud.lives ? "fill-ember text-ember" : "text-subtle")}
@@ -982,7 +1045,6 @@ function HudBar({
           {hud.coins}/{hud.total}
         </span>
         {hud.note ? <span className="font-display text-sm text-cream">{hud.note}</span> : null}
-        {hud.poleHint ? <span className="font-display text-sm text-cream">{hud.poleHint}</span> : null}
         <button type="button" onClick={onRestart} className="grid size-10 place-items-center" aria-label="Reiniciar">
           <RotateCcw className="size-4" />
         </button>
@@ -1034,7 +1096,13 @@ function Ajuste({
 function TouchPad() {
   const hold = (key: "left" | "right" | "jump" | "down" | "power") => ({
     onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
-      e.currentTarget.setPointerCapture(e.pointerId);
+      // Capturar el puntero evita que el dedo "se escape" del botón al deslizarse,
+      // pero si el navegador no lo permite el botón tiene que seguir funcionando.
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* sin captura, el botón responde igual */
+      }
       setTouch(key, true);
     },
     onPointerUp: () => setTouch(key, false),

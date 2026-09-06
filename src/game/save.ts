@@ -24,6 +24,8 @@ export type SaveData = {
   muted: boolean;
   secrets: WorldId[];
   resume: ResumeData | null;
+  /** Cómo quedó el mundo de origen al cruzar a un secreto; se restaura al volver. */
+  host: ResumeData | null;
   /** Modo asistido: ocho vidas, más aire y más margen tras un golpe. */
   assist: boolean;
   /** Cuánta sacudida de cámara acepta el jugador, de 0 a 1. */
@@ -38,6 +40,7 @@ const defaults = (): SaveData => ({
   muted: false,
   secrets: [],
   resume: null,
+  host: null,
   assist: false,
   shake: 1,
 });
@@ -62,6 +65,7 @@ export function loadSave(): SaveData {
       unlocked,
       secrets,
       resume: parsed.resume ?? null,
+      host: parsed.host ?? null,
       assist: parsed.assist === true,
       shake: typeof parsed.shake === "number" ? Math.max(0, Math.min(1, parsed.shake)) : 1,
     };
@@ -108,4 +112,15 @@ export function writeResume(resume: ResumeData | null) {
 
 export function clearResume() {
   return writeResume(null);
+}
+
+/**
+ * Al cruzar a un mundo secreto se apunta cómo queda el de origen —granos, tótem
+ * encendido, vidas— para devolverlo tal cual cuando el destello te trae de vuelta.
+ */
+export function writeHost(host: ResumeData | null) {
+  const s = loadSave();
+  s.host = host;
+  writeSave(s);
+  return s;
 }

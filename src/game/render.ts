@@ -361,11 +361,36 @@ export function renderGame(ctx: CanvasRenderingContext2D, game: Game, art: ArtPa
     if (plat.kind === "oneway") {
       const sx = plat.x - cam.x;
       const sy = plat.y - cam.y;
-      ctx.fillStyle = "rgba(243,230,208,0.18)";
-      roundRect(ctx, sx, sy, plat.w, Math.min(14, plat.h), 4);
+      if (sx + plat.w < -40 || sx > VIEW_W + 40 || sy < -40 || sy > VIEW_H + 40) continue;
+      // Repisa de tablones. Antes era un velo al 18 % que, sobre un fondo
+      // fotográfico, no se veía: el jugador no sabía que ahí se podía pisar.
+      const th = Math.min(14, plat.h);
+      ctx.save();
+      ctx.fillStyle = "rgba(12,8,7,0.36)";
+      roundRect(ctx, sx + 2, sy + 4, plat.w, th, 4);
       ctx.fill();
-      ctx.fillStyle = "rgba(243,230,208,0.5)";
-      ctx.fillRect(sx + 2, sy, plat.w - 4, 3);
+      const madera = ctx.createLinearGradient(0, sy, 0, sy + th);
+      madera.addColorStop(0, "#a5733f");
+      madera.addColorStop(0.5, "#7d522c");
+      madera.addColorStop(1, "#4b2f18");
+      ctx.fillStyle = madera;
+      roundRect(ctx, sx, sy, plat.w, th, 4);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(20,14,12,0.4)";
+      ctx.lineWidth = 1;
+      for (let jx = sx + 48; jx < sx + plat.w - 8; jx += 48) {
+        ctx.beginPath();
+        ctx.moveTo(jx, sy + 2);
+        ctx.lineTo(jx, sy + th - 2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(255,238,205,0.42)";
+      ctx.fillRect(sx + 3, sy, plat.w - 6, 2);
+      ctx.strokeStyle = "rgba(14,9,8,0.72)";
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, sx, sy, plat.w, th, 4);
+      ctx.stroke();
+      ctx.restore();
       continue;
     }
     if (plat.kind === "crate") {
@@ -549,12 +574,26 @@ export function renderGame(ctx: CanvasRenderingContext2D, game: Game, art: ArtPa
       ctx.restore();
     } else if (h.kind === "shark") {
       const img = art?.shark;
+      const alerta = h.alert ?? 0;
       const t = game.time * ((Math.PI * 2) / (h.period ?? 4.2)) + (h.phase ?? 0);
-      const facing = Math.cos(t) >= 0 ? 1 : -1;
+      const haciaElHeroe = game.player.x + game.player.w / 2 - (h.x + h.w / 2);
+      // Si ya te ha visto, mira hacia ti y no hacia su ronda.
+      const facing = alerta > 0.55 ? (haciaElHeroe >= 0 ? 1 : -1) : Math.cos(t) >= 0 ? 1 : -1;
       const sx = h.x - cam.x + h.w / 2;
       const sy = h.y - cam.y + h.h;
       const dw = 128;
       const dh = 52;
+      if (alerta > 0.2) {
+        // El mismo aviso que la serpiente: bajo el agua hace más falta aún.
+        const pulso = 0.5 + 0.5 * Math.sin(game.time * 10);
+        const halo = ctx.createRadialGradient(sx, sy - 22, 6, sx, sy - 22, 74);
+        halo.addColorStop(0, `rgba(214,86,40,${0.3 * alerta * (0.6 + 0.4 * pulso)})`);
+        halo.addColorStop(1, "rgba(214,86,40,0)");
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(sx, sy - 22, 74, 0, Math.PI * 2);
+        ctx.fill();
+      }
       if (img && img.complete) {
         ctx.save();
         ctx.translate(sx, sy);

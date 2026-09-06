@@ -360,6 +360,24 @@ test("la misma partida jugada igual da exactamente la misma cámara", () => {
   assert.deepEqual(uno, dos, "la cámara no puede depender del azar");
 });
 
+test("al continuar desde un tótem, la cámara ya mira ahí desde el primer fotograma", () => {
+  const g = createGame(
+    nivel({
+      platforms: [suelo(0, 500, 1800)],
+      checkpoints: [{ x: 1200, y: 458, w: 32, h: 42, active: false }],
+      spawnX: 100,
+      spawnY: 400,
+    }),
+    getCharacter("maya"),
+    { x: 100, y: 400, poleIndex: 0 },
+  );
+  assert.ok(g.player.x > 1100, "la partida sigue en el tótem, no en el arranque del nivel");
+  assert.ok(
+    Math.abs(g.camY - (g.player.y + g.player.h / 2)) < 1,
+    "la cámara debe apuntar al tótem, no barrer el nivel desde el arranque",
+  );
+});
+
 test("estar en pausa congela la simulación", () => {
   const g = partida({ spawnY: 200 });
   correr(g, 5);
